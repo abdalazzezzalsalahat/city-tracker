@@ -1,4 +1,4 @@
-# Lab-06 > city Tracker
+# City Tracker
 
 
 # City_explorer_api
@@ -34,6 +34,9 @@ we will use location and weather api for certen city.
 - Mr. Dario Thornhill 
 
 # lab-06
+
+
+
 ************************************************************************************************
 ## Number and name of feature: Repository Set Up
 
@@ -76,3 +79,54 @@ we will use location and weather api for certen city.
 ## Finish time: 21:50
 
 ## Actual time needed to complete: 00:50
+
+
+
+
+# Lab 07
+
+
+***************************************************************************************
+## Number and name of feature: #1 Data Formatting
+
+## Estimate of time needed to complete: 01:00
+
+## Start time: 14:50
+
+## Finish time: 15:30
+
+## Actual time needed to complete: 00:40
+
+***************************************************************************************
+## Number and name of feature: Locations
+
+## Estimate of time needed to complete: 01:30
+
+## Start time: 15:40
+
+## Finish time: 17:00
+
+## Actual time needed to complete: 01:20
+
+***************************************************************************************
+## Number and name of feature: Weather
+
+## Estimate of time needed to complete: 02:00
+
+## Start time: 17:10
+
+## Finish time: 19:00
+
+## Actual time needed to complete: 01:50
+
+***************************************************************************************
+## Number and name of feature: Parks
+
+## Estimate of time needed to complete: 03:30
+
+## Start time: 20:30
+
+## Finish time: 23:00
+
+## Actual time needed to complete: 03:30
+
