@@ -7,21 +7,35 @@
 
 require('dotenv').config();
 const express = require('express');
-const PORT = process.env.PORT;
-const superagent = require('superagent');
-let app = express();
 const cors = require('cors');
-app.use(cors());
+const superagent = require('superagent');
 
+const PORT = process.env.PORT;
+const GEOCODE_API_KEY = process.env.GEOCODE_API_KEY;
+const WEATHER_API_KEY = process.env.WEATHER_API_KEY;
+const PARKS_API_KEY = process.env.PARKS_API_KEY;
+const DATABASE_URL = process.env.DATABASE_URL;
+
+let app = express();
+app.use(cors());
+let pg = require('pg');
+
+const client = new pg.Client({
+    connectionString: DATABASE_URL,
+    ssl: {rejectUnauthorized: false}
+});
 
 app.get('/location', handleLocation);
 app.get('/weather', handleWeather);
 app.get('/parks', handleParks);
-app.get('*', handleErrors);
+// app.get('*', handleErrors);
 
-
-app.listen(PORT, ()=>{
-    console.log(`the app is listening to ${PORT}`);
+client.connect().then(() =>{
+    app.listen(PORT, ()=>{
+        console.log(`the app is listening to => ${PORT}`);
+    });
+}).catch(error => {
+    console.log(`Sorry, Error connicting to DataBase => ${error}`);
 });
 
 function handleLocation (req, res) {
@@ -29,7 +43,7 @@ function handleLocation (req, res) {
         let srchQ = req.query.city;
         getLocationData(srchQ, res);
     } catch(error) {
-        res.status(500).send(`Oops, something went wrong ${error}`);
+        res.status(500).send(`Oops, something went wrong => ${error}`);
     }
 }
 function handleWeather (req, res) {
@@ -47,12 +61,12 @@ function handleParks (req, res){
         let searchQuery = req.query.search_query;
         getParksData(searchQuery, res);
     } catch (error) {
-        res.status(500).send(`Oopsy, something went wrong ${error}`);
+        res.status(500).send(`Oopsy, something went wrong => ${error}`);
     }
 }
-function handleErrors (req, res) {
-    res.status(404).send({ status: 404, responseText: 'Sorry, this page Does not exist'});
-}
+// function handleErrors (req, res) {
+//     res.status(404).send({ status: 404, responseText: `Sorry, this page Does not exist => ${res.data} RRRRRRR => ${req.data}`});
+// }
 
 function CityLocation(srchQ, dsplyNam, lat, long){
     this.search_query = srchQ;
@@ -76,30 +90,43 @@ function CityParks (name, address, fee, description, url){
 }
 
 function getLocationData (searchQuery, res) {
-    // get data array from json
-    const query = {
-        key: process.env.GEOCODE_API_KEY,
-        q: searchQuery,
-        limit: 1,
-        format: 'json'
-    };
-    let url = 'https://us1.locationiq.com/v1/search.php';
-    superagent.get(url).query(query).then(data => {
-        try {
-            // let locationData = require('./data/location.json');
-            let displayName = data.body[0].display_name;
-            let latitude = data.body[0].lat;
-            let longitude = data.body[0].lon;
-            let resObj = new CityLocation(searchQuery, displayName, latitude, longitude);
-            res.status(200).send(resObj);
-        } catch (error) {
-            res.status(500).send(`Oopsy, there is API errors ${error}`).then(() => {
-                console.log('Message sent');
-            }).catch((error) => {
-                console.log(error.response.body);
-                // console.log(error.response.body.errors[0].message)
+    let sqlQuery = 'SELECT * FROM CityLocation WHERE city_name = ($1) ';
+    let value = [searchQuery];
+    client.query(sqlQuery, value).then(data => {
+        if (data.rows.length === 0){
+            const query = {
+                GEOCODE_API_KEY: GEOCODE_API_KEY,
+                searchQuery: searchQuery,
+                limit: 1,
+                format: 'json'
+            };
+            let url = `GET https://us1.locationiq.com/v1/search.php?key=${query.GEOCODE_API_KEY}&q=${query.searchQuery}&format=${query.format}`;
+            superagent.get(url).query(query).then(data => {
+                try {
+                    let displayName = data.body[0].display_name;
+                    let latitude = data.body[0].lat;
+                    let longitude = data.body[0].lon;
+                    let sqlQuery = `insert into CityLocation(city_name, display_name, latitude, longitude) values ($1,$2,$3,$4)returning *`;
+                    let values = [searchQuery,displayName,latitude,longitude];
+                    client.query(sqlQuery,values).then(data =>{
+                        console.log(`data returned back from db =>${data}`);
+                    });
+                    let resObj = new CityLocation(searchQuery, displayName, latitude, longitude);
+                    res.status(200).send(resObj);
+                } catch (error) {
+                    res.status(500).send(error);
+                }
+            }).catch(error => {
+                res.status(500).send(`Oopsy, there is API errors => ${error}`);
             });
         }
+        else{
+            let resObj = new CityLocation(data.rows[0].city_name, data.rows[0].display_name, data.rows[0].latitude, data.rows[0].longitude);
+            res.status(200).send(resObj);
+        }
+
+    }).catch(error => {
+        console.log(`Sorry, There is a problem getting data => ${error}`);
     });
 }
 function getWeatherData(searchQuery, latitude, longitude, res){
@@ -108,10 +135,9 @@ function getWeatherData(searchQuery, latitude, longitude, res){
         city: searchQuery,
         lat: latitude,
         long: longitude,
-        key: process.env.WEATHER_API_KEY,
-        days: 8
+        key: WEATHER_API_KEY,
     };
-    let url = 'https://api.weatherbit.io/v2.0/history/daily';
+    let url = `https://api.weatherbit.io/v2.0/forecast/daily?city=${query.city},NC&key=${query.key}`;
     superagent.get(url).query(query).then(data => {
         try {
             let obj = JSON.parse(data.text);
@@ -126,24 +152,26 @@ function getWeatherData(searchQuery, latitude, longitude, res){
                 let resObj = new CityWeather(searchQuery, weatherDesc, newDate);
                 wthrArry.push(resObj);
             }
-            res.status(200).send(wthrArry).then(() => {
-                console.log('Message sent');
-            }).catch((error) => {
-                console.log(error.response.body);
-                // console.log(error.response.body.errors[0].message)
-            });
+            // console.log('line 134');
+            // res.status(200).send(wthrArry).then(() => {
+            //     console.log('line 136');
+            //     console.log('Message sent');
+            // }).
         } catch (error) {
-            res.status(500).send(`Oopsy, there is API errors ${error}`);
+            res.status(500).send(`Oopsy, there is API errors => ${error}`);
         }
+    }).catch((error) => {
+        console.log(error.response.body.errors[0].message);
     });
 }
 function getParksData (searchQuery, res){
     // get data array from json
+    console.log('not here');
     const query = {
-        q: searchQuery,
-        api_key: process.env.PARKS_API_KEY
+        searchQ: searchQuery,
+        PARKS_API_KEY: PARKS_API_KEY
     };
-    let url = `https://developer.nps.gov/api/v1/parks`;
+    let url = `https://developer.nps.gov/api/v1/parks?parkCode=${query.searchQ}&api_key=${query.PARKS_API_KEY}`;
     superagent.get(url).query(query).then(data => {
         try {
             let obj = data.body.data;
@@ -163,11 +191,11 @@ function getParksData (searchQuery, res){
             res.status(200).send(parks).then(() => {
                 console.log('Message sent');
             }).catch((error) => {
+                console.log('Message sent');
                 console.log(error.response.body);
-                // console.log(error.response.body.errors[0].message)
             });
         } catch (error) {
-            res.status(500).send(`Oopsy, there is API errors ${error}`);
+            res.status(500).send(`Oopsy, there is API errors => ${error}`);
         }
     });
 }
