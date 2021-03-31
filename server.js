@@ -6,19 +6,36 @@
  */
 
 require('dotenv').config();
+
 const express = require('express');
+
 const cors = require('cors');
+
 const superagent = require('superagent');
 
+
 const PORT = process.env.PORT;
+
 const GEOCODE_API_KEY = process.env.GEOCODE_API_KEY;
+
 const WEATHER_API_KEY = process.env.WEATHER_API_KEY;
+
 const PARKS_API_KEY = process.env.PARKS_API_KEY;
+
+const MOVIE_API_KEY = process.env.MOVIE_API_KEY;
+
+const YELP_API_KEY = process.env.YELP_API_KEY;
+
 const DATABASE_URL = process.env.DATABASE_URL;
 
+
 let app = express();
+
 app.use(cors());
+
 let pg = require('pg');
+
+let page = 1;
 
 const client = new pg.Client({
     connectionString: DATABASE_URL,
@@ -26,10 +43,20 @@ const client = new pg.Client({
 });
 
 app.get('/location', handleLocation);
+
 app.get('/weather', handleWeather);
+
 app.get('/parks', handleParks);
+
+app.get('/movies', handleMovies);
+
+app.get('/yelp', handleYelp);
+
+// app.get('/', handleErrors);
+
 // app.get('*', handleErrors);
 
+// DATABASE_URL = postgres://azooz_new_exp:new3@localhost:3000/city_tracker
 client.connect().then(() =>{
     app.listen(PORT, ()=>{
         console.log(`the app is listening to => ${PORT}`);
@@ -64,18 +91,37 @@ function handleParks (req, res){
         res.status(500).send(`Oopsy, something went wrong => ${error}`);
     }
 }
+function handleMovies(req,res){
+    try {
+        let searchQuery = req.query.search_query;
+        getMoviesData(searchQuery, res);
+    } catch (error) {
+        res.status(500).send(`Oopsy, something went wrong => ${error}`);
+    }
+}
+function handleYelp(req, res){
+    try {
+        let searchQuery = req.query.search_query;
+        // let lat = req.query.latitude;
+        // let lon = req.query.longitude;
+        getYelpData(searchQuery,res);
+    } catch (error) {
+        res.status(500).send('Sorry, something went wron' + error);
+    }
+}
+
 // function handleErrors (req, res) {
 //     res.status(404).send({ status: 404, responseText: `Sorry, this page Does not exist => ${res.data} RRRRRRR => ${req.data}`});
 // }
 
-function CityLocation(srchQ, dsplyNam, lat, long){
+function CityLocation (srchQ, dsplyNam, lat, long){
     this.search_query = srchQ;
     this.formatted_query = dsplyNam;
     this.latitude = lat;
     this.longitude = long;
 }
 
-function CityWeather(srchQ, wthrDesc, time){
+function CityWeather (srchQ, wthrDesc, time){
     this.search_query = srchQ;
     this.forecast = wthrDesc;
     this.time = time;
@@ -89,10 +135,29 @@ function CityParks (name, address, fee, description, url){
     this.url = url;
 }
 
+function CityMovies (title, overview, average_votes, total_votes, image_url, popularity, released_on){
+    this.title = title;
+    this.overview = overview;
+    this.average_votes = average_votes;
+    this.total_votes = total_votes;
+    this.image_url = image_url;
+    this.popularity = popularity;
+    this.released_on = released_on;
+}
+
+function CityYelp (name, image_url, price, rating, url){
+    this.name= name;
+    this.image_url = image_url;
+    this.price = price;
+    this.rating = rating;
+    this.url = url;
+}
+
 function getLocationData (searchQuery, res) {
-    let sqlQuery = 'SELECT * FROM CityLocation WHERE city_name = ($1) ';
+    let sqlQuery = 'SELECT * FROM CityLocation WHERE city_name = ($1);';
     let value = [searchQuery];
     client.query(sqlQuery, value).then(data => {
+        console.log(sqlQuery);
         if (data.rows.length === 0){
             const query = {
                 GEOCODE_API_KEY: GEOCODE_API_KEY,
@@ -100,16 +165,18 @@ function getLocationData (searchQuery, res) {
                 limit: 1,
                 format: 'json'
             };
-            let url = `GET https://us1.locationiq.com/v1/search.php?key=${query.GEOCODE_API_KEY}&q=${query.searchQuery}&format=${query.format}`;
+            let url = `https://us1.locationiq.com/v1/search.php?key=${query.GEOCODE_API_KEY}&q=${query.searchQuery}&format=${query.format}`;
             superagent.get(url).query(query).then(data => {
                 try {
                     let displayName = data.body[0].display_name;
                     let latitude = data.body[0].lat;
                     let longitude = data.body[0].lon;
-                    let sqlQuery = `insert into CityLocation(city_name, display_name, latitude, longitude) values ($1,$2,$3,$4)returning *`;
+                    let sqlQuery = `INSERT INTO CityLocation(city_name, display_name, latitude, longitude) VALUES ($1,$2,$3,$4) RETURNING *;`;
                     let values = [searchQuery,displayName,latitude,longitude];
                     client.query(sqlQuery,values).then(data =>{
                         console.log(`data returned back from db =>${data}`);
+                    }).catch(err => {
+                        res.status(500).send(`inside then ${err}`);
                     });
                     let resObj = new CityLocation(searchQuery, displayName, latitude, longitude);
                     res.status(200).send(resObj);
@@ -193,9 +260,73 @@ function getParksData (searchQuery, res){
             }).catch((error) => {
                 console.log('Message sent');
                 console.log(error.response.body);
+                res.status(500).send(error);
             });
         } catch (error) {
             res.status(500).send(`Oopsy, there is API errors => ${error}`);
         }
+    });
+}
+function getMoviesData(searchQuery, res){
+    const query ={
+        key: MOVIE_API_KEY,
+        q : searchQuery
+    };
+    let url = `https://api.themoviedb.org/3/movie/550?api_key=${query.key}`;
+    superagent.get(url).query(query).then(data=>{
+        console.log(data.body.results.length);
+        let movieArray = [];
+        try{
+            for(let i = 0 ; i< data.body.results.length;i++){
+                console.log(data.body.results[i]);
+                let title = data.body.results[i].title;
+                let overview = data.body.results[i].overview;
+                let average_votes = data.body.results[i].vote_average;
+                let total_votes = data.body.results[i].vote_count;
+                let img_url = `https://image.tmdb.org/t/p/w500/${data.body.results[i].poster_path}`;
+                let popularity = data.body.results[i].popularity;
+                let date_released = data.body.results[i].release_date;
+                let movie = new CityMovies(title, overview, average_votes, total_votes, img_url, popularity, date_released);
+                movieArray.push(movie);
+            }
+            res.status(200).send(movieArray);
+        }catch(error){
+            res.status(500).send(error);
+        }
+    }).catch(error =>{
+        res.status(500).send(error);
+    });
+}
+function getYelpData (searchQuery, res) {
+    const page_number = 5;
+    const start_page = ((page - 1) * page_number + 1);
+    // yelp Clinet ID = e9O2hxux9rAsVUoJgS9UIA
+    let query = {
+        key: YELP_API_KEY,
+        location: searchQuery,
+        limit: page_number,
+        offset: start_page
+    };
+    page++;
+    let url = ``;
+    superagent.get(url).query(query).set(`Authoraization`, `Bearer${query.key}`).then(data => {
+        try {
+            let yelp_arrey = [];
+            let obj = JSON.parse(data.text).businesses;
+            for (let i = 0; i < obj.length; i++) {
+                let name = obj[i].name;
+                let image_url = obj[i].image_url;
+                let price = obj[i].price;
+                let rating = obj[i].rating;
+                let url = obj[i].url;
+                let yelp = new CityYelp (name, image_url, price, rating, url);
+                yelp_arrey.push(yelp);
+            }
+        } catch (error) {
+            console.log(error.response.body);
+            res.status(500).send(error);
+        }
+    }).catch((error) => {
+        res.status(500).send(`Oopsy, there is API errors => ${error}`);
     });
 }
